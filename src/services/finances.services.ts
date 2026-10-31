@@ -502,17 +502,58 @@ export const FinancesService = {
   },
 
   /**
-   * Retrieves high-performance aggregated sales and profit KPIs for today.
+   * Retrieves high-performance aggregated sales and profit KPIs for today or custom date range.
    */
-  async getSalesStats(db: D1Database, dashboardId: string): Promise<PosSalesStats> {
+  async getSalesStats(
+    db: D1Database,
+    dashboardId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<PosSalesStats> {
+    const whereClauses: string[] = ['dashboard_id = ?'];
+    const params: any[] = [dashboardId];
+
+    if (startDate && endDate) {
+      whereClauses.push('DATE(created_at) >= ? AND DATE(created_at) <= ?');
+      params.push(startDate, endDate);
+    } else if (startDate) {
+      whereClauses.push('DATE(created_at) >= ?');
+      params.push(startDate);
+    } else if (endDate) {
+      whereClauses.push('DATE(created_at) <= ?');
+      params.push(endDate);
+    } else {
+      whereClauses.push("DATE(created_at) = DATE('now')");
+    }
+
+    const whereStr = whereClauses.join(' AND ');
+
     const statsQuery = `
       SELECT
         COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') THEN total_amount ELSE 0 END), 0) as today_sales_revenue,
         COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') THEN net_profit ELSE 0 END), 0) as today_net_profit,
         COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') THEN 1 ELSE 0 END), 0) as today_transactions_count,
-        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND payment_method = 'cash' THEN paid_amount ELSE 0 END), 0) as today_cash_collected,
-        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND payment_method IN ('card', 'wallet', 'split') THEN paid_amount ELSE 0 END), 0) as today_electronic_collected,
-        COALESCE(SUM(CASE WHEN payment_method = 'cash' AND movement_type IN ('sale', 'cash_in', 'telecom_service') THEN paid_amount ELSE 0 END), 0) as today_cash_in,
+        COALESCE(SUM(
+          CASE 
+            WHEN movement_type IN ('sale', 'telecom_service') AND payment_method = 'cash' THEN paid_amount 
+            WHEN movement_type IN ('sale', 'telecom_service') AND payment_method = 'split' THEN COALESCE(CAST(json_extract(split_details_json, '$.cash_amount') AS REAL), 0)
+            ELSE 0 
+          END
+        ), 0) as today_cash_collected,
+        COALESCE(SUM(
+          CASE 
+            WHEN movement_type IN ('sale', 'telecom_service') AND payment_method IN ('card', 'wallet') THEN paid_amount 
+            WHEN movement_type IN ('sale', 'telecom_service') AND payment_method = 'split' THEN COALESCE(CAST(json_extract(split_details_json, '$.electronic_amount') AS REAL), 0)
+            ELSE 0 
+          END
+        ), 0) as today_electronic_collected,
+        COALESCE(SUM(
+          CASE 
+            WHEN payment_method = 'cash' AND movement_type IN ('sale', 'cash_in', 'telecom_service') THEN paid_amount 
+            WHEN payment_method = 'split' AND movement_type IN ('sale', 'cash_in', 'telecom_service') THEN COALESCE(CAST(json_extract(split_details_json, '$.cash_amount') AS REAL), 0)
+            ELSE 0 
+          END
+        ), 0) as today_cash_in,
         COALESCE(SUM(CASE WHEN movement_type IN ('expense', 'cash_out', 'refund') THEN paid_amount ELSE 0 END), 0) as today_cash_out,
         COALESCE(SUM(CASE WHEN movement_type = 'expense' THEN total_amount ELSE 0 END), 0) as today_expenses,
         COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND department = 'accessories' THEN total_amount ELSE 0 END), 0) as accessories_revenue,
@@ -520,10 +561,10 @@ export const FinancesService = {
         COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND department = 'spare_parts' THEN total_amount ELSE 0 END), 0) as spare_parts_revenue,
         COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND department = 'telecom' THEN total_amount ELSE 0 END), 0) as telecom_revenue
       FROM financial_movements
-      WHERE dashboard_id = ? AND DATE(created_at) = DATE('now');
+      WHERE ${whereStr};
     `;
 
-    const row = await db.prepare(statsQuery).bind(dashboardId).first<any>();
+    const row = await db.prepare(statsQuery).bind(...params).first<any>();
 
     return {
       today_sales_revenue: Number(row?.today_sales_revenue || 0),

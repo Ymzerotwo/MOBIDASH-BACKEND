@@ -57,7 +57,13 @@ export const FinancesController = {
     }
 
     try {
-      const stats = await FinancesService.getSalesStats(db, user.dashboard_id);
+      const query = c.req.query();
+      const stats = await FinancesService.getSalesStats(
+        db,
+        user.dashboard_id,
+        query.start_date,
+        query.end_date
+      );
 
       return sendResponse(
         c,
