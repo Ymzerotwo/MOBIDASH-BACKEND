@@ -23,6 +23,7 @@ import { AppContext, Bindings } from './types'
 import { logger } from './utils/logger'
 import { sendResponse } from './utils/response'
 import { csrfProtection } from './middleware/csrf'
+import { apiKeyAuth } from './middleware/apiKey.middleware'
 import { getAllowedOrigins } from './utils/request'
 import { sessionMiddleware } from './middleware/session'
 import { rateLimiter } from './middleware/rateLimit.middleware'
@@ -111,6 +112,7 @@ const dashboardCors = async (c: Context<any>, next: Next) => {
 }
 
 app.use('/api/*', dashboardCors)
+app.use('/api/*', apiKeyAuth)
 
 // 5. Strict Origin/Referer Validation Middleware for Browser-based Dashboard Requests
 // Protects browser cookie sessions against unauthorized cross-origin requests.

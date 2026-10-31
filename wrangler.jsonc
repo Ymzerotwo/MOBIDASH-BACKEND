@@ -44,6 +44,7 @@
 	],
 	"vars": {
 		"APP_FRONTEND_URL": "https://test-oura.ymzerotwo.com",
+		"MOBIDASH_API_KEY": "mbd_sec_49a8f2190bc7e3d168a",
 		"mobidash_MASTER_SECRET": "your_custom_master_crypto_secret_here",
 		"CF_ACCOUNT_ID": "your_cloudflare_account_id_here",
 		"CLOUDFLARE_API_TOKEN": "your_cloudflare_api_token_here",

@@ -8,6 +8,9 @@ CF_ACCOUNT_ID="your_cloudflare_account_id"
 # Master Crypto Secret (used for HMAC API Key signing)
 OURADASH_MASTER_SECRET="your_custom_master_crypto_secret_here"
 
+# MobiDash Global API Key
+MOBIDASH_API_KEY="mbd_sec_49a8f2190bc7e3d168a"
+
 # R2 Bucket Storage Public Domain
 R2_PUBLIC_URL="https://pub-xxxxxx.r2.dev"
 

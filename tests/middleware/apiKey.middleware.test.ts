@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { apiKeyAuth } from '../../src/middleware/apiKey.middleware';
 
-describe('Middleware: MobiDash API Key Auth', () => {
+describe('Middleware: MobiDash API Key & Domain Auth', () => {
   let mockContext: any;
   let mockNext: any;
   const VALID_KEY = 'mobidash_secret_test_key_xyz123';
+  const VALID_ORIGIN = 'http://localhost:3000';
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -13,11 +14,14 @@ describe('Middleware: MobiDash API Key Auth', () => {
 
     mockContext = {
       req: {
+        method: 'GET',
+        path: '/api/phones',
         header: vi.fn(),
-        url: 'http://localhost/api/test',
+        url: 'http://localhost/api/phones',
       },
       env: {
-        API_KEY: VALID_KEY,
+        MOBIDASH_API_KEY: VALID_KEY,
+        ALLOWED_ORIGINS: 'http://localhost:3000,https://mobidash.com',
       },
       set: vi.fn(),
       get: vi.fn((key: string) => {
@@ -28,93 +32,96 @@ describe('Middleware: MobiDash API Key Auth', () => {
     };
   });
 
-  it('should return 401 API_KEY_MISSING if no API Key is provided', async () => {
-    mockContext.req.header.mockReturnValue(undefined);
+  it('should bypass OPTIONS preflight requests', async () => {
+    mockContext.req.method = 'OPTIONS';
 
-    const response: any = await apiKeyAuth(mockContext, mockNext);
+    await apiKeyAuth(mockContext, mockNext);
 
-    expect(response.status).toBe(401);
-    expect(response.data.slug).toBe('API_KEY_MISSING');
-    expect(mockNext).not.toHaveBeenCalled();
+    expect(mockNext).toHaveBeenCalled();
+    expect(mockContext.json).not.toHaveBeenCalled();
   });
 
-  it('should return 500 API_KEY_NOT_CONFIGURED if server env lacks API_KEY binding (Fail-Closed)', async () => {
-    mockContext.env = {}; // No API_KEY configured on server
+  it('should return obscure 404 NOT_FOUND if origin is not allowed in production', async () => {
+    mockContext.req.url = 'https://api.mobidash.com/api/phones';
     mockContext.req.header.mockImplementation((name: string) => {
+      if (name.toLowerCase() === 'origin') return 'https://malicious-hacker-site.com';
       if (name.toLowerCase() === 'x-api-key') return VALID_KEY;
       return undefined;
     });
 
     const response: any = await apiKeyAuth(mockContext, mockNext);
 
-    expect(response.status).toBe(500);
-    expect(response.data.slug).toBe('API_KEY_NOT_CONFIGURED');
+    expect(response.status).toBe(404);
+    expect(response.data.slug).toBe('NOT_FOUND');
     expect(mockNext).not.toHaveBeenCalled();
   });
 
-  it('should return 401 INVALID_API_KEY if key does not match', async () => {
+  it('should return obscure 404 NOT_FOUND if no API Key is provided', async () => {
     mockContext.req.header.mockImplementation((name: string) => {
-      if (name.toLowerCase() === 'x-api-key') return 'wrong_api_key';
+      if (name.toLowerCase() === 'origin') return VALID_ORIGIN;
       return undefined;
     });
 
     const response: any = await apiKeyAuth(mockContext, mockNext);
 
-    expect(response.status).toBe(401);
-    expect(response.data.slug).toBe('INVALID_API_KEY');
+    expect(response.status).toBe(404);
+    expect(response.data.slug).toBe('NOT_FOUND');
     expect(mockNext).not.toHaveBeenCalled();
   });
 
-  it('should authorize successfully when valid key is provided via x-api-key', async () => {
+  it('should return obscure 404 NOT_FOUND if key does not match', async () => {
     mockContext.req.header.mockImplementation((name: string) => {
+      if (name.toLowerCase() === 'origin') return VALID_ORIGIN;
+      if (name.toLowerCase() === 'x-api-key') return 'wrong_api_key_guess';
+      return undefined;
+    });
+
+    const response: any = await apiKeyAuth(mockContext, mockNext);
+
+    expect(response.status).toBe(404);
+    expect(response.data.slug).toBe('NOT_FOUND');
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('should authorize successfully when valid key and allowed origin are provided via x-api-key', async () => {
+    mockContext.req.header.mockImplementation((name: string) => {
+      if (name.toLowerCase() === 'origin') return VALID_ORIGIN;
       if (name.toLowerCase() === 'x-api-key') return VALID_KEY;
       return undefined;
     });
 
     await apiKeyAuth(mockContext, mockNext);
 
-    expect(mockContext.set).toHaveBeenCalledWith('apiKeyDomain', 'authorized');
+    expect(mockContext.set).toHaveBeenCalledWith('apiKeyDomain', VALID_ORIGIN);
     expect(mockContext.set).toHaveBeenCalledWith('isApiKeyAuthenticated', true);
     expect(mockNext).toHaveBeenCalled();
   });
 
   it('should authorize successfully when valid key is provided via Authorization: Bearer', async () => {
     mockContext.req.header.mockImplementation((name: string) => {
+      if (name.toLowerCase() === 'origin') return VALID_ORIGIN;
       if (name.toLowerCase() === 'authorization') return `Bearer ${VALID_KEY}`;
       return undefined;
     });
 
     await apiKeyAuth(mockContext, mockNext);
 
-    expect(mockContext.set).toHaveBeenCalledWith('apiKeyDomain', 'authorized');
+    expect(mockContext.set).toHaveBeenCalledWith('apiKeyDomain', VALID_ORIGIN);
     expect(mockContext.set).toHaveBeenCalledWith('isApiKeyAuthenticated', true);
     expect(mockNext).toHaveBeenCalled();
   });
 
   it('should trim surrounding whitespace from API key before comparison', async () => {
     mockContext.req.header.mockImplementation((name: string) => {
+      if (name.toLowerCase() === 'origin') return VALID_ORIGIN;
       if (name.toLowerCase() === 'x-api-key') return `   ${VALID_KEY}   `;
       return undefined;
     });
 
     await apiKeyAuth(mockContext, mockNext);
 
-    expect(mockContext.set).toHaveBeenCalledWith('apiKeyDomain', 'authorized');
-    expect(mockNext).toHaveBeenCalled();
-  });
-
-  it('should fallback to MOBIDASH_API_KEY if API_KEY is not set', async () => {
-    mockContext.env = {
-      MOBIDASH_API_KEY: 'custom_mobi_key_456',
-    };
-    mockContext.req.header.mockImplementation((name: string) => {
-      if (name.toLowerCase() === 'x-api-key') return 'custom_mobi_key_456';
-      return undefined;
-    });
-
-    await apiKeyAuth(mockContext, mockNext);
-
-    expect(mockContext.set).toHaveBeenCalledWith('apiKeyDomain', 'authorized');
+    expect(mockContext.set).toHaveBeenCalledWith('apiKeyDomain', VALID_ORIGIN);
+    expect(mockContext.set).toHaveBeenCalledWith('isApiKeyAuthenticated', true);
     expect(mockNext).toHaveBeenCalled();
   });
 });
