@@ -453,7 +453,7 @@ export const TelecomService = {
       )
     );
 
-    // 3. Cash Drawer Impact: if funded from cash_drawer, register cash outflow
+    // 3. Cash Drawer Impact: if funded from cash_drawer, register cash outflow in movements and update shift
     if (input.source_of_funds === 'cash_drawer') {
       const movementId = `cm-${crypto.randomUUID()}`;
       batchStatements.push(
@@ -475,6 +475,67 @@ export const TelecomService = {
           now
         )
       );
+
+      // Central financial_movements ledger entry
+      const finMovementId = `mov-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`;
+      const today = new Date();
+      const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+      const voucherNumber = `TOP-${dateStr}-${crypto.randomUUID().substring(0, 4).toUpperCase()}`;
+
+      batchStatements.push(
+        db.prepare(`
+          INSERT INTO financial_movements (
+            id, dashboard_id, invoice_number, department, movement_type, payment_method,
+            subtotal, discount, total_amount, cost_amount, net_profit, paid_amount, remaining_amount,
+            customer_id, customer_name, customer_phone, cashier_id, cashier_name,
+            shift_id, terminal_id, telecom_transaction_id, items_json, telecom_details_json,
+            split_details_json, notes, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?
+          )
+        `).bind(
+          finMovementId,
+          dashboardId,
+          voucherNumber,
+          'telecom',
+          'cash_out',
+          'cash',
+          input.amount,
+          0.0,
+          input.amount,
+          0.0,
+          0.0,
+          input.amount,
+          0.0,
+          null,
+          'تغذية رصيد ماكينة من الدرج',
+          '-',
+          cashierId,
+          cashierName,
+          shiftId,
+          terminalId,
+          txId,
+          JSON.stringify([{ terminal_name: terminal.name, amount: input.amount, source: 'cash_drawer' }]),
+          JSON.stringify({ terminal_id: terminalId, action: 'top_up', account: subAccount }),
+          null,
+          input.notes || `تغذية رصيد ${terminal.name} من درج الكاشير`,
+          now
+        )
+      );
+
+      if (shiftId) {
+        batchStatements.push(
+          db.prepare(`
+            UPDATE shifts 
+            SET expected_cash = expected_cash - ?, updated_at = ? 
+            WHERE id = ? AND dashboard_id = ? AND status = 'active'
+          `).bind(input.amount, now, shiftId, dashboardId)
+        );
+      }
     }
 
     await db.batch(batchStatements);
@@ -1039,10 +1100,17 @@ export const TelecomService = {
       )
     );
 
-    // 3. Cash Drawer Synchronization
+    // 3. Cash Drawer & Central Ledger (financial_movements & shifts) Synchronization
     const movementId = `cm-${crypto.randomUUID()}`;
+    const finMovementId = `mov-${Date.now()}-${crypto.randomUUID().substring(0, 8)}`;
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const voucherNumber = `TX-${dateStr}-${crypto.randomUUID().substring(0, 4).toUpperCase()}`;
+
     if (input.type === 'cash_out') {
-      // Cash given to customer from drawer
+      // Cash given to customer from drawer (amount minus commission kept as profit)
+      const netDrawerCash = Math.max(0, input.amount - commission);
+
       batchStatements.push(
         db.prepare(`
           INSERT INTO cash_movements (
@@ -1054,7 +1122,7 @@ export const TelecomService = {
           dashboardId,
           'out',
           'wallet_cash_out',
-          input.amount,
+          netDrawerCash,
           `صرف كاش سحب محفظة/فيزا: ${input.service_name} (${input.phone_or_ref})`,
           cashierId,
           cashierName,
@@ -1062,29 +1130,70 @@ export const TelecomService = {
           now
         )
       );
-    } else if (input.type === 'cash_in') {
-      // Customer paid cash to cashier to send to their wallet
+
+      // Central financial movements master ledger entry
       batchStatements.push(
         db.prepare(`
-          INSERT INTO cash_movements (
-            id, dashboard_id, type, category, amount,
-            description, cashier_profile_id, cashier_name, shift_id, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO financial_movements (
+            id, dashboard_id, invoice_number, department, movement_type, payment_method,
+            subtotal, discount, total_amount, cost_amount, net_profit, paid_amount, remaining_amount,
+            customer_id, customer_name, customer_phone, cashier_id, cashier_name,
+            shift_id, terminal_id, telecom_transaction_id, items_json, telecom_details_json,
+            split_details_json, notes, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?
+          )
         `).bind(
-          movementId,
+          finMovementId,
           dashboardId,
-          'in',
-          'wallet_cash_in',
-          totalCustomerAmount,
-          `استلام كاش إيداع محفظة: ${input.service_name} (${input.phone_or_ref})`,
+          voucherNumber,
+          'telecom',
+          'telecom_service',
+          'cash',
+          input.amount,
+          0.0,
+          input.amount,
+          netDrawerCash,
+          commission,
+          netDrawerCash,
+          0.0,
+          null,
+          input.customer_name?.trim() || 'عميل نقدي',
+          input.phone_or_ref,
           cashierId,
           cashierName,
           shiftId,
+          terminal.id,
+          txId,
+          JSON.stringify([{ title: input.service_name, price: input.amount, quantity: 1, type: 'telecom_service' }]),
+          JSON.stringify({ terminal_id: terminal.id, terminal_name: terminal.name, provider: terminal.provider, phone_or_ref: input.phone_or_ref, type: input.type, category: input.category, commission, service_fee: serviceFee }),
+          null,
+          input.notes || `صرف كاش سحب محفظة: ${input.service_name} (${input.phone_or_ref})`,
           now
         )
       );
+
+      // Sync active shift drawer cash atomically
+      if (shiftId) {
+        batchStatements.push(
+          db.prepare(`
+            UPDATE shifts 
+            SET expected_cash = expected_cash - ?, updated_at = ? 
+            WHERE id = ? AND dashboard_id = ? AND status = 'active'
+          `).bind(netDrawerCash, now, shiftId, dashboardId)
+        );
+      }
     } else {
-      // bill_payment or airtime: Cash received from customer
+      // cash_in, bill_payment, or airtime: Cash received from customer enters drawer
+      const categoryLabel = input.type === 'cash_in' ? 'wallet_cash_in' : 'pos_sale';
+      const descLabel = input.type === 'cash_in'
+        ? `استلام كاش إيداع محفظة: ${input.service_name} (${input.phone_or_ref})`
+        : `سداد خدمة/فاتورة سنترال: ${input.service_name} (${input.phone_or_ref})`;
+
       batchStatements.push(
         db.prepare(`
           INSERT INTO cash_movements (
@@ -1095,15 +1204,72 @@ export const TelecomService = {
           movementId,
           dashboardId,
           'in',
-          'pos_sale',
+          categoryLabel,
           totalCustomerAmount,
-          `سداد خدمة/فاتورة كاشير: ${input.service_name} (${input.phone_or_ref})`,
+          descLabel,
           cashierId,
           cashierName,
           shiftId,
           now
         )
       );
+
+      // Central financial movements master ledger entry
+      batchStatements.push(
+        db.prepare(`
+          INSERT INTO financial_movements (
+            id, dashboard_id, invoice_number, department, movement_type, payment_method,
+            subtotal, discount, total_amount, cost_amount, net_profit, paid_amount, remaining_amount,
+            customer_id, customer_name, customer_phone, cashier_id, cashier_name,
+            shift_id, terminal_id, telecom_transaction_id, items_json, telecom_details_json,
+            split_details_json, notes, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?
+          )
+        `).bind(
+          finMovementId,
+          dashboardId,
+          voucherNumber,
+          'telecom',
+          'telecom_service',
+          'cash',
+          input.amount,
+          0.0,
+          totalCustomerAmount,
+          input.amount,
+          commission,
+          totalCustomerAmount,
+          0.0,
+          null,
+          input.customer_name?.trim() || 'عميل نقدي',
+          input.phone_or_ref,
+          cashierId,
+          cashierName,
+          shiftId,
+          terminal.id,
+          txId,
+          JSON.stringify([{ title: input.service_name, price: totalCustomerAmount, quantity: 1, type: 'telecom_service' }]),
+          JSON.stringify({ terminal_id: terminal.id, terminal_name: terminal.name, provider: terminal.provider, phone_or_ref: input.phone_or_ref, type: input.type, category: input.category, commission, service_fee: serviceFee }),
+          null,
+          input.notes || descLabel,
+          now
+        )
+      );
+
+      // Sync active shift drawer cash atomically
+      if (shiftId) {
+        batchStatements.push(
+          db.prepare(`
+            UPDATE shifts 
+            SET expected_cash = expected_cash + ?, updated_at = ? 
+            WHERE id = ? AND dashboard_id = ? AND status = 'active'
+          `).bind(totalCustomerAmount, now, shiftId, dashboardId)
+        );
+      }
     }
 
     // Execute atomic batch

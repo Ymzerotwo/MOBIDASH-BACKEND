@@ -218,7 +218,18 @@ export const FinancesService = {
 
           const isCashOut = item.telecom_details.type === 'cash_out' || item.telecom_details.sub_account === 'cash_out_balance';
           const balanceColumn = isCashOut && term.has_dual_accounts ? 'cash_out_balance' : 'balance';
-          const balanceChange = isCashOut ? Number(item.price) : -Number(item.price);
+          const commission = Number(item.telecom_details.commission || 0);
+          const serviceFee = Number(item.telecom_details.service_fee || 0);
+          const serviceBaseAmount = Number(
+            item.telecom_details.amount !== undefined
+              ? item.telecom_details.amount
+              : Math.max(0, Number(item.price) - commission)
+          );
+          const balanceChange = isCashOut ? serviceBaseAmount : -serviceBaseAmount;
+
+          // Cost: the digital balance exiting the machine (or cash handed to customer in cash_out)
+          const telecomCost = isCashOut ? Math.max(0, serviceBaseAmount - commission) : serviceBaseAmount;
+          totalCost += telecomCost;
 
           // 1. Insert into telecom_transactions (Machine's dedicated detailed ledger)
           statements.push(
@@ -238,10 +249,10 @@ export const FinancesService = {
               item.telecom_details.type || 'bill_payment',
               item.telecom_details.service_name || item.title,
               item.telecom_details.service_code || null,
-              item.price,
-              Number(item.telecom_details.commission || 0),
-              Number(item.telecom_details.service_fee || 0),
-              Number(item.price + (item.telecom_details.service_fee || 0)),
+              serviceBaseAmount,
+              commission,
+              serviceFee,
+              Number(item.price + serviceFee),
               item.telecom_details.phone_or_ref || '-',
               input.customer_name?.trim() || null,
               currentUser.id,
@@ -251,7 +262,7 @@ export const FinancesService = {
             )
           );
 
-          // 2. Atomic terminal balance update statement
+          // 2. Atomic terminal balance update statement (deducts only base amount, preserving store commission)
           statements.push(
             db.prepare(`
               UPDATE telecom_terminals 
@@ -496,18 +507,18 @@ export const FinancesService = {
   async getSalesStats(db: D1Database, dashboardId: string): Promise<PosSalesStats> {
     const statsQuery = `
       SELECT
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' THEN total_amount ELSE 0 END), 0) as today_sales_revenue,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' THEN net_profit ELSE 0 END), 0) as today_net_profit,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' THEN 1 ELSE 0 END), 0) as today_transactions_count,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' AND payment_method = 'cash' THEN paid_amount ELSE 0 END), 0) as today_cash_collected,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' AND payment_method IN ('card', 'wallet', 'split') THEN paid_amount ELSE 0 END), 0) as today_electronic_collected,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') THEN total_amount ELSE 0 END), 0) as today_sales_revenue,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') THEN net_profit ELSE 0 END), 0) as today_net_profit,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') THEN 1 ELSE 0 END), 0) as today_transactions_count,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND payment_method = 'cash' THEN paid_amount ELSE 0 END), 0) as today_cash_collected,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND payment_method IN ('card', 'wallet', 'split') THEN paid_amount ELSE 0 END), 0) as today_electronic_collected,
         COALESCE(SUM(CASE WHEN payment_method = 'cash' AND movement_type IN ('sale', 'cash_in', 'telecom_service') THEN paid_amount ELSE 0 END), 0) as today_cash_in,
         COALESCE(SUM(CASE WHEN movement_type IN ('expense', 'cash_out', 'refund') THEN paid_amount ELSE 0 END), 0) as today_cash_out,
         COALESCE(SUM(CASE WHEN movement_type = 'expense' THEN total_amount ELSE 0 END), 0) as today_expenses,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' AND department = 'accessories' THEN total_amount ELSE 0 END), 0) as accessories_revenue,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' AND department = 'phones' THEN total_amount ELSE 0 END), 0) as phones_revenue,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' AND department = 'spare_parts' THEN total_amount ELSE 0 END), 0) as spare_parts_revenue,
-        COALESCE(SUM(CASE WHEN movement_type = 'sale' AND department = 'telecom' THEN total_amount ELSE 0 END), 0) as telecom_revenue
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND department = 'accessories' THEN total_amount ELSE 0 END), 0) as accessories_revenue,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND department = 'phones' THEN total_amount ELSE 0 END), 0) as phones_revenue,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND department = 'spare_parts' THEN total_amount ELSE 0 END), 0) as spare_parts_revenue,
+        COALESCE(SUM(CASE WHEN movement_type IN ('sale', 'telecom_service') AND department = 'telecom' THEN total_amount ELSE 0 END), 0) as telecom_revenue
       FROM financial_movements
       WHERE dashboard_id = ? AND DATE(created_at) = DATE('now');
     `;

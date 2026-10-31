@@ -1271,6 +1271,7 @@ export interface PosCartItemPayload {
     service_name: string;
     service_code?: string;
     phone_or_ref: string;
+    amount?: number;
     commission?: number;
     service_fee?: number;
   } | null;

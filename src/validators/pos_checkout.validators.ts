@@ -34,6 +34,7 @@ export const posCartItemSchema = z.object({
       service_name: z.string().trim(),
       service_code: z.string().trim().optional().nullable(),
       phone_or_ref: z.string().trim(),
+      amount: z.coerce.number().positive().optional(),
       commission: z.coerce.number().min(0).optional().default(0),
       service_fee: z.coerce.number().min(0).optional().default(0),
     })
