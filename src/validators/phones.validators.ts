@@ -100,7 +100,8 @@ export const createPhoneSchema = z.object({
     .trim()
     .max(100)
     .optional()
-    .nullable(),
+    .nullable()
+    .transform((val) => (val && val.trim().length > 0 ? sanitizeForDb(val) : null)),
   seller_name: z.string()
     .trim()
     .max(100)
@@ -159,18 +160,7 @@ export const createPhoneSchema = z.object({
     });
   }
 
-  // الحالة 1: جديد متبرشم
-  if (data.condition === 'new') {
-    if (!data.supplier_id || !data.supplier_id.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'يجب تحديد المورد أو شركة التوزيع للأجهزة الجديدة المتبرشمة',
-        path: ['supplier_id'],
-      });
-    }
-  }
-
-  // الحالة 2: مستعمل أو كسر زيرو (اشتراطات التحقق الجنائي وعقد المبايعة)
+  // اشتراطات التحقق الجنائي وعقد المبايعة للأجهزة المستعملة أو كسر زيرو
   if (data.condition === 'used' || data.condition === 'used_like_new') {
     if (!data.seller_name || data.seller_name.trim().length < 3) {
       ctx.addIssue({
@@ -221,7 +211,7 @@ export const updatePhoneSchema = z.object({
   selling_price: z.coerce.number().min(0).optional(),
   min_price: z.coerce.number().min(0).optional(),
   warranty_period: z.string().trim().max(100).optional().nullable().transform(val => val ? sanitizeForDb(val) : null),
-  supplier_id: z.string().trim().max(100).optional().nullable(),
+  supplier_id: z.string().trim().max(100).optional().nullable().transform((val) => (val && val.trim().length > 0 ? sanitizeForDb(val) : null)),
   seller_name: z.string().trim().max(100).optional().nullable().transform(val => val ? sanitizeForDb(val) : null),
   seller_national_id: z.string().trim().optional().nullable(),
   seller_phone: z.string().trim().optional().nullable(),
