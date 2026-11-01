@@ -74,14 +74,13 @@ export const AuthController = {
         });
       }
 
-      const hostname = new URL(c.req.url).hostname;
-      const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
+      const isProduction = isProductionRequest(c);
 
       setCookie(c, 'session_id', result.sessionId as string, {
         path: '/',
         secure: isProduction,
         httpOnly: true,
-        sameSite: 'Lax',
+        sameSite: isProduction ? 'None' : 'Lax',
         expires: result.expiresAt
       });
 
@@ -136,8 +135,7 @@ export const AuthController = {
       }
 
       if ('requires_2fa' in result && result.requires_2fa) {
-        const hostname = new URL(c.req.url).hostname;
-        const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
+        const isProduction = isProductionRequest(c);
 
         // Set secure HttpOnly cookie for 2FA pre-auth token (TTL: 5 minutes)
         // Immune to XSS attacks since JavaScript cannot access it
@@ -145,7 +143,7 @@ export const AuthController = {
           path: '/',
           secure: isProduction,
           httpOnly: true,
-          sameSite: 'Lax',
+          sameSite: isProduction ? 'None' : 'Lax',
           maxAge: 300,
         });
 
@@ -156,16 +154,14 @@ export const AuthController = {
         });
       }
 
-      const hostname = new URL(c.req.url).hostname;
-      const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
+      const isProduction = isProductionRequest(c);
       
       // Set secure HTTP-only cookie for session tracking.
-      // Uses Lax SameSite attribute to allow standard cross-site navigation while preventing CSRF.
       setCookie(c, 'session_id', result.sessionId as string, {
         path: '/',
         secure: isProduction,
         httpOnly: true,
-        sameSite: 'Lax',
+        sameSite: isProduction ? 'None' : 'Lax',
         expires: result.expiresAt
       });
 
@@ -400,14 +396,13 @@ export const AuthController = {
         return sendResponse(c, (result.status || 400) as any, result.error || 'INVITATION_ERROR', result.message || 'Invitation error');
       }
 
-      const hostname = new URL(c.req.url).hostname;
-      const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
+      const isProduction = isProductionRequest(c);
 
       setCookie(c, 'session_id', result.sessionId as string, {
         path: '/',
         secure: isProduction,
         httpOnly: true,
-        sameSite: 'Lax',
+        sameSite: isProduction ? 'None' : 'Lax',
         expires: result.expiresAt
       });
 
@@ -444,14 +439,13 @@ export const AuthController = {
         return sendResponse(c, (result.status || 400) as any, result.error || 'INVALID_CODE', result.message || 'Verification error');
       }
 
-      const hostname = new URL(c.req.url).hostname;
-      const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
+      const isProduction = isProductionRequest(c);
 
       setCookie(c, 'session_id', result.sessionId as string, {
         path: '/',
         secure: isProduction,
         httpOnly: true,
-        sameSite: 'Lax',
+        sameSite: isProduction ? 'None' : 'Lax',
         expires: result.expiresAt
       });
 
@@ -519,20 +513,20 @@ export const AuthController = {
         return sendResponse(c, (result.status || 400) as any, result.error as any, result.message || 'Two-factor verification failed');
       }
 
-      const hostname = new URL(c.req.url).hostname;
-      const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
+      const isProduction = isProductionRequest(c);
 
       // Clean up the two_factor_token HttpOnly cookie immediately upon successful login
       deleteCookie(c, 'two_factor_token', {
         path: '/',
         secure: isProduction,
+        sameSite: isProduction ? 'None' : 'Lax',
       });
 
       setCookie(c, 'session_id', result.sessionId as string, {
         path: '/',
         secure: isProduction,
         httpOnly: true,
-        sameSite: 'Lax',
+        sameSite: isProduction ? 'None' : 'Lax',
         expires: result.expiresAt
       });
 
@@ -595,11 +589,11 @@ export const AuthController = {
     }
 
     // Extract master session
-    const authHeader = c.req.header('Authorization');
+    const authHeader = c.req.header('authorization') || c.req.header('Authorization');
     let sessionId = (c.get('session_id') as string) || '';
     if (!sessionId) {
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        sessionId = authHeader.split(' ')[1];
+      if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+        sessionId = authHeader.substring(7).trim();
       } else {
         sessionId = getCookie(c, 'session_id') || '';
       }
@@ -656,11 +650,11 @@ export const AuthController = {
     }
 
     // Extract master session
-    const authHeader = c.req.header('Authorization');
+    const authHeader = c.req.header('authorization') || c.req.header('Authorization');
     let sessionId = (c.get('session_id') as string) || '';
     if (!sessionId) {
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        sessionId = authHeader.split(' ')[1];
+      if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+        sessionId = authHeader.substring(7).trim();
       } else {
         sessionId = getCookie(c, 'session_id') || '';
       }
@@ -744,11 +738,11 @@ export const AuthController = {
     }
 
     // Extract master session from Cookie or Bearer header for mobile apps
-    const authHeader = c.req.header('Authorization');
+    const authHeader = c.req.header('authorization') || c.req.header('Authorization');
     let sessionId = (c.get('session_id') as string) || '';
     if (!sessionId) {
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        sessionId = authHeader.split(' ')[1];
+      if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+        sessionId = authHeader.substring(7).trim();
       } else {
         sessionId = getCookie(c, 'session_id') || '';
       }
@@ -800,11 +794,11 @@ export const AuthController = {
     }
 
     // Extract master session from Cookie or Bearer header for mobile apps
-    const authHeader = c.req.header('Authorization');
+    const authHeader = c.req.header('authorization') || c.req.header('Authorization');
     let sessionId = (c.get('session_id') as string) || '';
     if (!sessionId) {
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        sessionId = authHeader.split(' ')[1];
+      if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+        sessionId = authHeader.substring(7).trim();
       } else {
         sessionId = getCookie(c, 'session_id') || '';
       }
@@ -858,11 +852,11 @@ export const AuthController = {
       return sendResponse(c, 500, 'SERVER_ERROR', 'Session verification service unavailable');
     }
 
-    const authHeader = c.req.header('Authorization');
+    const authHeader = c.req.header('authorization') || c.req.header('Authorization');
     let sessionId = (c.get('session_id') as string) || '';
     if (!sessionId) {
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        sessionId = authHeader.split(' ')[1];
+      if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+        sessionId = authHeader.substring(7).trim();
       } else {
         sessionId = getCookie(c, 'session_id') || '';
       }
@@ -1004,9 +998,13 @@ export const AuthController = {
           path: '/',
           secure: isProduction,
           httpOnly: true,
-          sameSite: 'Lax',
+          sameSite: isProduction ? 'None' : 'Lax',
           maxAge: 30 * 24 * 60 * 60,
         });
+
+        if (result.data) {
+          (result.data as any).sessionId = sessionId;
+        }
       }
 
       return sendResponse(c, 200, 'STORE_AUTHENTICATED', 'تم تسجيل دخول المتجر بنجاح', result.data);
@@ -1091,7 +1089,7 @@ export const AuthController = {
         path: '/',
         secure: isProduction,
         httpOnly: true,
-        sameSite: 'Lax',
+        sameSite: isProduction ? 'None' : 'Lax',
         maxAge: 30 * 24 * 60 * 60
       });
 

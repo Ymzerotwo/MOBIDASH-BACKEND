@@ -42,7 +42,7 @@ export const rotateCsrfToken = (c: Context): string => {
   setCookie(c, 'csrf_token', token, {
     path: '/',
     secure: isProduction, // HTTPS required in production
-    sameSite: 'Lax',      // Prevents cookie from being sent on cross-site POSTs
+    sameSite: isProduction ? 'None' : 'Lax', // Required for cross-origin fetch in production HTTPS
     httpOnly: false,      // Frontend JS MUST be able to read this
     maxAge: 24 * 60 * 60, // 24 hours validity
   });

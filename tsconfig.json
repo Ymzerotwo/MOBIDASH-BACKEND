@@ -16,7 +16,10 @@
     "jsxImportSource": "hono/jsx"
   },
   "include": [
-    "src",
-    "setup_user.ts"
+    "src"
+  ],
+  "exclude": [
+    "setup_user.ts",
+    "src/db/init_db.ts"
   ]
 }

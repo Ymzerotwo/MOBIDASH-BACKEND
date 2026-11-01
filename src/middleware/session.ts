@@ -22,7 +22,7 @@ import { getClientFingerprint, isLocalHostname } from '../utils/request';
  */
 const deleteSessionCookie = (c: Context<AppContext>) => {
   const isProduction = !isLocalHostname(c.req.url);
-  deleteCookie(c, 'session_id', { path: '/', secure: isProduction, sameSite: 'Lax' });
+  deleteCookie(c, 'session_id', { path: '/', secure: isProduction, sameSite: isProduction ? 'None' : 'Lax' });
 };
 
 /**
@@ -44,11 +44,11 @@ export const sessionMiddleware = async (c: Context<AppContext>, next: Next) => {
   const reqId = (c.get('requestId') as string) || 'unknown';
 
   // 1. Extract session ID from Authorization header (Bearer token) or HTTP Cookie
-  const authHeader = c.req.header('Authorization');
+  const authHeader = c.req.header('authorization') || c.req.header('Authorization');
   let sessionId = '';
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    sessionId = authHeader.split(' ')[1] || '';
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    sessionId = authHeader.substring(7).trim();
   } else {
     sessionId = getCookie(c, 'session_id') || '';
   }
