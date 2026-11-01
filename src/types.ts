@@ -426,6 +426,12 @@ export interface PhoneRecord {
   notes?: string | null;
   date_added: string;
   created_by?: string | null;
+  created_by_name?: string | null;
+  purchased_by_name?: string | null;
+  sold_by_name?: string | null;
+  reserved_by_name?: string | null;
+  updated_by_name?: string | null;
+  supplier_name?: string | null;
   created_at: string;
   updated_by?: string | null;
   updated_at: string;
@@ -603,9 +609,12 @@ export interface Accessory {
   date_added: string;
   status: AccessoryStatus;
   supplier_id?: string | null;
+  supplier_name?: string | null;
   notes?: string | null;
   created_by?: string | null;
+  created_by_name?: string | null;
   updated_by?: string | null;
+  updated_by_name?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -622,8 +631,10 @@ export interface AccessoryStockMovement {
   unit_price?: number | null;
   invoice_id?: string | null;
   supplier_id?: string | null;
+  supplier_name?: string | null;
   shift_id?: string | null;
   created_by?: string | null;
+  created_by_name?: string | null;
   notes?: string | null;
   created_at: string;
 }
@@ -781,11 +792,14 @@ export interface SparePartRecord {
   warranty_days: number;
   shelf_location?: string | null;
   supplier_id?: string | null;
+  supplier_name?: string | null;
   status: SparePartStatus;
   notes?: string | null;
   created_by?: string | null;
+  created_by_name?: string | null;
   created_at?: string;
   updated_by?: string | null;
+  updated_by_name?: string | null;
   updated_at?: string;
 }
 

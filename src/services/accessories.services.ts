@@ -87,8 +87,16 @@ export const AccessoriesService = {
     barcode: string
   ): Promise<Accessory | null> {
     return await db.prepare(`
-      SELECT * FROM accessories 
-      WHERE dashboard_id = ? AND barcode = ? AND status != 'archived'
+      SELECT 
+        a.*,
+        u_creator.name AS created_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM accessories a
+      LEFT JOIN Users u_creator ON a.created_by = u_creator.id
+      LEFT JOIN Users u_updater ON a.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON a.supplier_id = s.id
+      WHERE a.dashboard_id = ? AND a.barcode = ? AND a.status != 'archived'
       LIMIT 1
     `).bind(dashboardId, barcode.trim()).first<Accessory>();
   },
@@ -102,8 +110,16 @@ export const AccessoriesService = {
     id: string
   ): Promise<Accessory | null> {
     return await db.prepare(`
-      SELECT * FROM accessories 
-      WHERE dashboard_id = ? AND id = ? 
+      SELECT 
+        a.*,
+        u_creator.name AS created_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM accessories a
+      LEFT JOIN Users u_creator ON a.created_by = u_creator.id
+      LEFT JOIN Users u_updater ON a.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON a.supplier_id = s.id
+      WHERE a.dashboard_id = ? AND a.id = ? 
       LIMIT 1
     `).bind(dashboardId, id).first<Accessory>();
   },
@@ -170,42 +186,42 @@ export const AccessoriesService = {
     );
     const offset = (page - 1) * limit;
 
-    const filterClauses: string[] = ['dashboard_id = ?'];
+    const filterClauses: string[] = ['a.dashboard_id = ?'];
     const params: any[] = [dashboardId];
 
     // Status filter
     if (query.status && query.status !== 'all') {
-      filterClauses.push('status = ?');
+      filterClauses.push('a.status = ?');
       params.push(query.status);
     } else {
-      filterClauses.push("status != 'archived'");
+      filterClauses.push("a.status != 'archived'");
     }
 
     // Category filter
     if (query.category && query.category !== 'all') {
-      filterClauses.push('category = ?');
+      filterClauses.push('a.category = ?');
       params.push(query.category);
     }
 
     // Brand filter
     if (query.brand && query.brand !== 'all') {
-      filterClauses.push('brand = ?');
+      filterClauses.push('a.brand = ?');
       params.push(query.brand);
     }
 
     // Stock filter (all, low, available, out_of_stock)
     if (query.stock_filter === 'low') {
-      filterClauses.push('stock <= min_stock_alert AND stock > 0');
+      filterClauses.push('a.stock <= a.min_stock_alert AND a.stock > 0');
     } else if (query.stock_filter === 'available') {
-      filterClauses.push('stock > 0');
+      filterClauses.push('a.stock > 0');
     } else if (query.stock_filter === 'out_of_stock') {
-      filterClauses.push('stock <= 0');
+      filterClauses.push('a.stock <= 0');
     }
 
     // Search filter (name, barcode, brand, compatibility)
     if (query.search && query.search.trim()) {
       filterClauses.push(
-        `(name LIKE ? ESCAPE '\\' OR barcode LIKE ? ESCAPE '\\' OR brand LIKE ? ESCAPE '\\' OR compatibility LIKE ? ESCAPE '\\')`
+        `(a.name LIKE ? ESCAPE '\\' OR a.barcode LIKE ? ESCAPE '\\' OR a.brand LIKE ? ESCAPE '\\' OR a.compatibility LIKE ? ESCAPE '\\')`
       );
       const pattern = `%${escapeLikePattern(query.search.trim())}%`;
       params.push(pattern, pattern, pattern, pattern);
@@ -214,20 +230,28 @@ export const AccessoriesService = {
     const whereClause = filterClauses.join(' AND ');
 
     // Safe sorting column
-    let orderColumn = 'created_at';
-    if (query.sort_by === 'name') orderColumn = 'name';
-    if (query.sort_by === 'stock') orderColumn = 'stock';
-    if (query.sort_by === 'retail_price') orderColumn = 'retail_price';
+    let orderColumn = 'a.created_at';
+    if (query.sort_by === 'name') orderColumn = 'a.name';
+    if (query.sort_by === 'stock') orderColumn = 'a.stock';
+    if (query.sort_by === 'retail_price') orderColumn = 'a.retail_price';
     const orderDirection = query.sort_order === 'asc' ? 'ASC' : 'DESC';
 
     // Total count query
-    const countSql = `SELECT COUNT(*) as total FROM accessories WHERE ${whereClause}`;
+    const countSql = `SELECT COUNT(*) as total FROM accessories a WHERE ${whereClause}`;
     const countResult = await db.prepare(countSql).bind(...params).first<{ total: number }>();
     const total = countResult?.total || 0;
 
-    // Data query
+    // Data query with User and Supplier Names joined
     const dataSql = `
-      SELECT * FROM accessories 
+      SELECT 
+        a.*,
+        u_creator.name AS created_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM accessories a
+      LEFT JOIN Users u_creator ON a.created_by = u_creator.id
+      LEFT JOIN Users u_updater ON a.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON a.supplier_id = s.id
       WHERE ${whereClause} 
       ORDER BY ${orderColumn} ${orderDirection} 
       LIMIT ? OFFSET ?
@@ -585,9 +609,15 @@ export const AccessoriesService = {
     const total = countResult?.total || 0;
 
     const dataResult = await db.prepare(`
-      SELECT * FROM accessory_stock_movements 
-      WHERE dashboard_id = ? AND accessory_id = ? 
-      ORDER BY created_at DESC 
+      SELECT 
+        asm.*,
+        u.name AS created_by_name,
+        s.name AS supplier_name
+      FROM accessory_stock_movements asm
+      LEFT JOIN Users u ON asm.created_by = u.id
+      LEFT JOIN suppliers s ON asm.supplier_id = s.id
+      WHERE asm.dashboard_id = ? AND asm.accessory_id = ? 
+      ORDER BY asm.created_at DESC 
       LIMIT ? OFFSET ?
     `).bind(dashboardId, accessoryId, limit, offset).all<AccessoryStockMovement>();
 

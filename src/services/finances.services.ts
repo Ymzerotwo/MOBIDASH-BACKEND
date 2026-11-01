@@ -227,6 +227,29 @@ export const FinancesService = {
           );
           const balanceChange = isCashOut ? serviceBaseAmount : -serviceBaseAmount;
 
+          // Check overdraft limit on main balance when disbursing balance
+          if (!isCashOut && balanceColumn === 'balance') {
+            const projectedBalance = Number(term.balance || 0) + balanceChange;
+            if (term.allow_overdraft) {
+              const odLimit = Number(term.overdraft_limit || 0);
+              if (projectedBalance < -odLimit) {
+                const err: any = new Error(
+                  `تجاوزت العملية الحد الأقصى للسلفة والائتمان المسموح به لماكينة (${term.name}) وهو ${odLimit} ج.م`
+                );
+                err.slug = 'OVERDRAFT_LIMIT_EXCEEDED';
+                throw err;
+              }
+            } else {
+              if (projectedBalance < 0) {
+                const err: any = new Error(
+                  `رصيد ماكينة (${term.name}) غير كافٍ، ولا تسمح هذه الماكينة برصيد سالب`
+                );
+                err.slug = 'INSUFFICIENT_BALANCE';
+                throw err;
+              }
+            }
+          }
+
           // Cost: the digital balance exiting the machine (or cash handed to customer in cash_out)
           const telecomCost = isCashOut ? Math.max(0, serviceBaseAmount - commission) : serviceBaseAmount;
           totalCost += telecomCost;

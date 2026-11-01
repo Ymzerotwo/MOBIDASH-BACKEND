@@ -1495,7 +1495,7 @@ export const TelecomService = {
     const whereSQL = whereClauses.join(' AND ');
 
     const sql = `
-      SELECT id, name, provider, category, balance, cash_out_balance, account_number, has_dual_accounts, allow_overdraft, min_threshold, status
+      SELECT id, name, provider, category, balance, cash_out_balance, account_number, has_dual_accounts, allow_overdraft, overdraft_limit, min_threshold, status
       FROM telecom_terminals
       WHERE ${whereSQL}
       ORDER BY category ASC, name ASC;
@@ -1516,6 +1516,8 @@ export const TelecomService = {
       sim_number: row.category === 'wallet' ? (row.account_number || null) : null,
       is_dual_account: Boolean(row.has_dual_accounts),
       allow_negative: Boolean(row.allow_overdraft),
+      allow_overdraft: Boolean(row.allow_overdraft),
+      overdraft_limit: Number(row.overdraft_limit || 0),
       min_threshold: Number(row.min_threshold ?? 50),
       status: row.status,
     }));

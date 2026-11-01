@@ -86,55 +86,55 @@ export const PhonesService = {
     const limit = Math.min(100, Math.max(1, Number(query.limit || 20)));
     const offset = (page - 1) * limit;
 
-    const whereClauses: string[] = ['dashboard_id = ?'];
+    const whereClauses: string[] = ['p.dashboard_id = ?'];
     const params: any[] = [dashboardId];
 
     // فلتر التبويب (Tabs) المتطابق مع واجهة المستخدم
     if (query.tab) {
       if (query.tab === 'in_stock') {
-        whereClauses.push("status = 'in_stock'");
+        whereClauses.push("p.status = 'in_stock'");
       } else if (query.tab === 'new') {
-        whereClauses.push("status = 'in_stock' AND condition = 'new'");
+        whereClauses.push("p.status = 'in_stock' AND p.condition = 'new'");
       } else if (query.tab === 'used') {
-        whereClauses.push("status = 'in_stock' AND condition IN ('used_like_new', 'used')");
+        whereClauses.push("p.status = 'in_stock' AND p.condition IN ('used_like_new', 'used')");
       } else if (query.tab === 'reserved') {
-        whereClauses.push("status = 'reserved'");
+        whereClauses.push("p.status = 'reserved'");
       } else if (query.tab === 'sold') {
-        whereClauses.push("status = 'sold'");
+        whereClauses.push("p.status = 'sold'");
       }
     }
 
     // فلتر الحالة الفردية إذا لم تُحدد بالتبويب
     if (query.status && query.status !== 'all' && !query.tab) {
-      whereClauses.push('status = ?');
+      whereClauses.push('p.status = ?');
       params.push(query.status);
     }
 
     // فلتر حالة الجهاز الفردية
     if (query.condition && query.condition !== 'all' && !query.tab) {
-      whereClauses.push('condition = ?');
+      whereClauses.push('p.condition = ?');
       params.push(query.condition);
     }
 
     // فلتر الماركة
     if (query.brand && query.brand.trim() && query.brand !== 'all') {
-      whereClauses.push('brand = ?');
+      whereClauses.push('p.brand = ?');
       params.push(query.brand.trim());
     }
 
     // فلتر المورد
     if (query.supplier_id && query.supplier_id.trim()) {
-      whereClauses.push('supplier_id = ?');
+      whereClauses.push('p.supplier_id = ?');
       params.push(query.supplier_id.trim());
     }
 
     // فلتر نطاق الأسعار
     if (query.min_price !== undefined && query.min_price !== null) {
-      whereClauses.push('selling_price >= ?');
+      whereClauses.push('p.selling_price >= ?');
       params.push(query.min_price);
     }
     if (query.max_price !== undefined && query.max_price !== null) {
-      whereClauses.push('selling_price <= ?');
+      whereClauses.push('p.selling_price <= ?');
       params.push(query.max_price);
     }
 
@@ -142,16 +142,16 @@ export const PhonesService = {
     if (query.search && query.search.trim()) {
       const term = `%${escapeLikePattern(query.search.trim())}%`;
       whereClauses.push(`(
-        brand LIKE ? ESCAPE '\\' OR 
-        model LIKE ? ESCAPE '\\' OR 
-        color LIKE ? ESCAPE '\\' OR 
-        imei LIKE ? ESCAPE '\\' OR 
-        imei2 LIKE ? ESCAPE '\\' OR 
-        seller_name LIKE ? ESCAPE '\\' OR 
-        seller_national_id LIKE ? ESCAPE '\\' OR 
-        seller_phone LIKE ? ESCAPE '\\' OR 
-        buyer_name LIKE ? ESCAPE '\\' OR 
-        buyer_phone LIKE ? ESCAPE '\\'
+        p.brand LIKE ? ESCAPE '\\' OR 
+        p.model LIKE ? ESCAPE '\\' OR 
+        p.color LIKE ? ESCAPE '\\' OR 
+        p.imei LIKE ? ESCAPE '\\' OR 
+        p.imei2 LIKE ? ESCAPE '\\' OR 
+        p.seller_name LIKE ? ESCAPE '\\' OR 
+        p.seller_national_id LIKE ? ESCAPE '\\' OR 
+        p.seller_phone LIKE ? ESCAPE '\\' OR 
+        p.buyer_name LIKE ? ESCAPE '\\' OR 
+        p.buyer_phone LIKE ? ESCAPE '\\'
       )`);
       for (let i = 0; i < 10; i++) {
         params.push(term);
@@ -161,22 +161,36 @@ export const PhonesService = {
     const whereSQL = whereClauses.join(' AND ');
 
     // استعلام العدد الإجمالي للترقيم
-    const countSQL = `SELECT COUNT(*) as total FROM phones WHERE ${whereSQL};`;
+    const countSQL = `SELECT COUNT(*) as total FROM phones p WHERE ${whereSQL};`;
     const countRow = await db.prepare(countSQL).bind(...params).first<{ total: number }>();
     const total = Number(countRow?.total || 0);
 
     // ترتيب السجلات
-    let orderCol = 'date_added';
-    if (query.sort_by === 'created_at') orderCol = 'created_at';
-    else if (query.sort_by === 'selling_price') orderCol = 'selling_price';
-    else if (query.sort_by === 'purchase_price') orderCol = 'purchase_price';
+    let orderCol = 'p.date_added';
+    if (query.sort_by === 'created_at') orderCol = 'p.created_at';
+    else if (query.sort_by === 'selling_price') orderCol = 'p.selling_price';
+    else if (query.sort_by === 'purchase_price') orderCol = 'p.purchase_price';
 
     const orderDir = query.sort_order?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     const dataSQL = `
-      SELECT * FROM phones
+      SELECT 
+        p.*,
+        u_creator.name AS created_by_name,
+        u_purchaser.name AS purchased_by_name,
+        u_seller.name AS sold_by_name,
+        u_reserver.name AS reserved_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM phones p
+      LEFT JOIN Users u_creator ON p.created_by = u_creator.id
+      LEFT JOIN Users u_purchaser ON p.purchased_by = u_purchaser.id
+      LEFT JOIN Users u_seller ON p.sold_by = u_seller.id
+      LEFT JOIN Users u_reserver ON p.reserved_by = u_reserver.id
+      LEFT JOIN Users u_updater ON p.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
       WHERE ${whereSQL}
-      ORDER BY ${orderCol} ${orderDir}, created_at DESC
+      ORDER BY ${orderCol} ${orderDir}, p.created_at DESC
       LIMIT ? OFFSET ?;
     `;
 
@@ -198,7 +212,25 @@ export const PhonesService = {
    * جلب تفاصيل جهاز محدد بواسطة المعرف
    */
   async getPhoneById(db: D1Database, dashboardId: string, id: string): Promise<PhoneRecord | null> {
-    const query = `SELECT * FROM phones WHERE dashboard_id = ? AND id = ? LIMIT 1;`;
+    const query = `
+      SELECT 
+        p.*,
+        u_creator.name AS created_by_name,
+        u_purchaser.name AS purchased_by_name,
+        u_seller.name AS sold_by_name,
+        u_reserver.name AS reserved_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM phones p
+      LEFT JOIN Users u_creator ON p.created_by = u_creator.id
+      LEFT JOIN Users u_purchaser ON p.purchased_by = u_purchaser.id
+      LEFT JOIN Users u_seller ON p.sold_by = u_seller.id
+      LEFT JOIN Users u_reserver ON p.reserved_by = u_reserver.id
+      LEFT JOIN Users u_updater ON p.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      WHERE p.dashboard_id = ? AND p.id = ? 
+      LIMIT 1;
+    `;
     const record = await db.prepare(query).bind(dashboardId, id).first<PhoneRecord>();
     return record || null;
   },
@@ -207,7 +239,25 @@ export const PhonesService = {
    * جلب وفحص هاتف بواسطة رقم السيريال IMEI (1 أو 2)
    */
   async getPhoneByImei(db: D1Database, dashboardId: string, imei: string): Promise<PhoneRecord | null> {
-    const query = `SELECT * FROM phones WHERE dashboard_id = ? AND (imei = ? OR (imei2 IS NOT NULL AND imei2 = ?)) LIMIT 1;`;
+    const query = `
+      SELECT 
+        p.*,
+        u_creator.name AS created_by_name,
+        u_purchaser.name AS purchased_by_name,
+        u_seller.name AS sold_by_name,
+        u_reserver.name AS reserved_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM phones p
+      LEFT JOIN Users u_creator ON p.created_by = u_creator.id
+      LEFT JOIN Users u_purchaser ON p.purchased_by = u_purchaser.id
+      LEFT JOIN Users u_seller ON p.sold_by = u_seller.id
+      LEFT JOIN Users u_reserver ON p.reserved_by = u_reserver.id
+      LEFT JOIN Users u_updater ON p.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      WHERE p.dashboard_id = ? AND (p.imei = ? OR (p.imei2 IS NOT NULL AND p.imei2 = ?)) 
+      LIMIT 1;
+    `;
     const record = await db.prepare(query).bind(dashboardId, imei, imei).first<PhoneRecord>();
     return record || null;
   },

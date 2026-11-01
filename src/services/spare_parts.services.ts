@@ -174,16 +174,16 @@ export const SparePartsService = {
     const limit = Math.min(100, Math.max(1, Number(filter.limit) || 20));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ['dashboard_id = ?'];
+    const conditions: string[] = ['sp.dashboard_id = ?'];
     const params: any[] = [dashboardId];
 
     // استثناء القطع المؤرشفة ما لم يُطلب صراحة
-    conditions.push("status != 'archived'");
+    conditions.push("sp.status != 'archived'");
 
     // بحث بالاسم أو الكود أو الموديل
     if (filter.search && filter.search.trim()) {
       const escaped = escapeLikePattern(filter.search.trim());
-      conditions.push('(name LIKE ? ESCAPE "\\" OR device_model LIKE ? ESCAPE "\\" OR part_code LIKE ? ESCAPE "\\")');
+      conditions.push('(sp.name LIKE ? ESCAPE "\\" OR sp.device_model LIKE ? ESCAPE "\\" OR sp.part_code LIKE ? ESCAPE "\\")');
       params.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
     }
 
@@ -192,55 +192,63 @@ export const SparePartsService = {
       const trimmedCat = filter.category.trim();
       const aliases = CATEGORY_ALIASES[trimmedCat] || [trimmedCat];
       const placeholders = aliases.map(() => '?').join(', ');
-      conditions.push(`category IN (${placeholders})`);
+      conditions.push(`sp.category IN (${placeholders})`);
       params.push(...aliases);
     }
 
     // فلترة بالجودة
     if (filter.quality && filter.quality.trim() && filter.quality !== 'all') {
-      conditions.push('quality = ?');
+      conditions.push('sp.quality = ?');
       params.push(filter.quality.trim());
     }
 
     // فلترة بموديل الجهاز
     if (filter.device_model && filter.device_model.trim() && filter.device_model !== 'all') {
       const escaped = escapeLikePattern(filter.device_model.trim());
-      conditions.push('(device_model LIKE ? ESCAPE "\\" OR compatible_models LIKE ? ESCAPE "\\")');
+      conditions.push('(sp.device_model LIKE ? ESCAPE "\\" OR sp.compatible_models LIKE ? ESCAPE "\\")');
       params.push(`%${escaped}%`, `%${escaped}%`);
     }
 
     // فلترة بالمورد
     if (filter.supplier_id && filter.supplier_id.trim() && filter.supplier_id !== 'all') {
-      conditions.push('supplier_id = ?');
+      conditions.push('sp.supplier_id = ?');
       params.push(filter.supplier_id.trim());
     }
 
     // فلترة بحالة الرصيد
     if (filter.stock_status && filter.stock_status !== 'all') {
       if (filter.stock_status === 'low_stock') {
-        conditions.push('stock <= min_stock_alert');
+        conditions.push('sp.stock <= sp.min_stock_alert');
       } else if (filter.stock_status === 'out_of_stock') {
-        conditions.push('stock = 0');
+        conditions.push('sp.stock = 0');
       } else if (filter.stock_status === 'available') {
-        conditions.push('stock > min_stock_alert');
+        conditions.push('sp.stock > sp.min_stock_alert');
       }
     }
 
     const whereClause = conditions.join(' AND ');
 
     // عد السجلات الإجمالي
-    const countSql = `SELECT COUNT(*) as total FROM spare_parts WHERE ${whereClause};`;
+    const countSql = `SELECT COUNT(*) as total FROM spare_parts sp WHERE ${whereClause};`;
     const countRow = await db.prepare(countSql).bind(...params).first<{ total: number }>();
     const total = Number(countRow?.total || 0);
 
     // ترتيب السجلات
     const allowedSortFields = ['created_at', 'name', 'stock', 'selling_price', 'cost_price'];
-    const sortBy = allowedSortFields.includes(filter.sort_by || '') ? filter.sort_by : 'created_at';
+    const sortBy = allowedSortFields.includes(filter.sort_by || '') ? `sp.${filter.sort_by}` : 'sp.created_at';
     const sortOrder = filter.sort_order === 'asc' ? 'ASC' : 'DESC';
 
     // جلب السجلات مقسمة صفحات
     const dataSql = `
-      SELECT * FROM spare_parts
+      SELECT 
+        sp.*,
+        u_creator.name AS created_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM spare_parts sp
+      LEFT JOIN Users u_creator ON sp.created_by = u_creator.id
+      LEFT JOIN Users u_updater ON sp.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON sp.supplier_id = s.id
       WHERE ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?;
@@ -286,7 +294,19 @@ export const SparePartsService = {
     dashboardId: string,
     id: string
   ): Promise<SparePartRecord | null> {
-    const query = `SELECT * FROM spare_parts WHERE dashboard_id = ? AND id = ? LIMIT 1;`;
+    const query = `
+      SELECT 
+        sp.*,
+        u_creator.name AS created_by_name,
+        u_updater.name AS updated_by_name,
+        s.name AS supplier_name
+      FROM spare_parts sp
+      LEFT JOIN Users u_creator ON sp.created_by = u_creator.id
+      LEFT JOIN Users u_updater ON sp.updated_by = u_updater.id
+      LEFT JOIN suppliers s ON sp.supplier_id = s.id
+      WHERE sp.dashboard_id = ? AND sp.id = ? 
+      LIMIT 1;
+    `;
     const row = await db.prepare(query).bind(dashboardId, id).first<SparePartRecord>();
     return row || null;
   },
