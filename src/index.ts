@@ -256,20 +256,14 @@ export default {
     
 
     const kvBinding = (env as any).mobidash || (env as any).ouradash_dashboard || (env as any).K1;
-    const masterSecret = (env as any).mobidash_MASTER_SECRET ;
 
     const requiredEnv: string[] = [
       'DB',
-      'STORAGE',
-      'R2_PUBLIC_URL',
       'CLOUDFLARE_API_TOKEN',
       'CF_ACCOUNT_ID'
     ];
     const missing = requiredEnv.filter(key => !(env as any)[key]);
 
-    if (!masterSecret) {
-      missing.push('mobidash_MASTER_SECRET');
-    }
 
     if (!kvBinding) {
       missing.push('mobidash (KV)');
@@ -284,7 +278,6 @@ export default {
       ouradash_dashboard: kvBinding,
       K1: kvBinding,
       mobidash: kvBinding,
-      mobidash_MASTER_SECRET: masterSecret,
       EMAIL_FROM_ADDRESS: env.EMAIL_FROM_ADDRESS,
       APP_FRONTEND_URL: env.APP_FRONTEND_URL,
       // No hard-coded default allowlist: utils/request.ts resolves it (explicit env → APP_FRONTEND_URL → local only).

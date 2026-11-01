@@ -21,18 +21,11 @@
 			"head_sampling_rate": 1
 		}
 	},
-	"r2_buckets": [
-		{
-			"binding": "STORAGE",
-			"bucket_name": "auradash-storage",
-			"remote": true
-		}
-	],
 	"d1_databases": [
 		{
 			"binding": "DB",
 			"database_name": "mobidash",
-			"database_id": "5517ff1c-990b-4dc0-8c69-83e1766fb678",
+			"database_id": "ce2050d1-1e0f-4451-b6c9-69a1153c30db",
 			"migrations_dir": "migrations"
 		}
 	],
@@ -43,19 +36,17 @@
 		}
 	],
 	"vars": {
-		"APP_FRONTEND_URL": "https://test-oura.ymzerotwo.com",
+		"APP_FRONTEND_URL": "https://mobidash.ymzerotwo.com",
 		"MOBIDASH_API_KEY": "mbd_sec_49a8f2190bc7e3d168a",
-		"mobidash_MASTER_SECRET": "your_custom_master_crypto_secret_here",
-		"CF_ACCOUNT_ID": "your_cloudflare_account_id_here",
+		"CF_ACCOUNT_ID": "453201237115cc94a6d2855b7089a701",
 		"CLOUDFLARE_API_TOKEN": "your_cloudflare_api_token_here",
-		"EMAIL_FROM_ADDRESS": "noreply@yourdomain.com",
-		"R2_PUBLIC_URL": "https://auradash-storage.ymzerotwo.com"
+		"EMAIL_FROM_ADDRESS": "noreply@mobidash.ymzerotwo.com"
 	},
 	"kv_namespaces": [
 		{
 			"binding": "mobidash",
-			"id": "389eb059f51d4d3aada66bbcd6bba2e7",
-			"preview_id": "389eb059f51d4d3aada66bbcd6bba2e7",
+			"id": "53d8d9c68c814487a6d4333d83d076b7",
+			"preview_id": "53d8d9c68c814487a6d4333d83d076b7",
 			"remote": false
 		}
 	],
