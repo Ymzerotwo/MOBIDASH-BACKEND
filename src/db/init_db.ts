@@ -81,7 +81,7 @@ function ensureDropSqlFile(): string {
 function runCommand(cmd: string, description: string) {
   console.log(`\n⏳ ${description}...`);
   try {
-    execSync(cmd, { stdio: 'inherit' });
+    execSync(cmd, { stdio: 'inherit', env: { ...process.env, CI: 'true' } });
     console.log(`✅ Completed: ${description}`);
     return true;
   } catch (error: any) {
